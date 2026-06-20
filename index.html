@@ -42,6 +42,14 @@
     padding:9px 12px;border-radius:10px;font-size:.88rem;outline:none}
   .filters select:focus,.filters input:focus{border-color:var(--acc2)}
   .chip{font-size:.74rem;color:var(--mut);margin-left:auto}
+  /* past toggle */
+  .pastbar{margin-bottom:16px}
+  .pastbtn{background:var(--card);border:1px solid var(--line);color:var(--mut);
+    padding:9px 16px;border-radius:10px;cursor:pointer;font-size:.86rem;font-weight:600;transition:.15s}
+  .pastbtn:hover{color:var(--txt);border-color:#33406b}
+  .pastbtn.on{color:var(--acc);border-color:rgba(0,214,143,.4)}
+  .dayhead.today{color:var(--acc)}
+  .dayhead.today::after{background:linear-gradient(90deg,rgba(0,214,143,.4),var(--line))}
   /* day groups */
   .day{margin-bottom:22px}
   .dayhead{font-size:.8rem;font-weight:700;color:var(--mut);text-transform:uppercase;
@@ -168,13 +176,14 @@ const EN_ALIAS={"South Korea":"Korea Republic","Republic of Korea":"Korea Republ
 "Ivory Coast":"Côte d'Ivoire","Cote d'Ivoire":"Côte d'Ivoire","DR Congo":"Congo DR","Czech Republic":"Czechia",
 "Turkey":"Türkiye","Cape Verde":"Cabo Verde","IR Iran":"Iran","Bosnia & Herzegovina":"Bosnia and Herzegovina"};
 function normEn(n){return n?(EN_ALIAS[n]||n):"";}
+let showPast=false;
 
 // ---- demo "live" simulation: a match is LIVE for 105 min after kickoff if it has no stored score
 function matchState(m,now){
   if(API_LIVE[m.n]&&API_LIVE[m.n].live) return "live";
   if(m.sh!==null && m.sa!==null) return "finished";
-  if(API_OK) return "upcoming"; // API подтвердит live/finished при следующем опросе
-  const ko=new Date(m.utc).getTime(); const end=ko+105*60000; // fallback, если API недоступен
+  if(API_OK) return "upcoming";
+  const ko=new Date(m.utc).getTime(); const end=ko+105*60000;
   if(now>=ko && now<end) return "live";
   if(now>=end) return "finished";
   return "upcoming";
@@ -192,6 +201,7 @@ function liveScore(m,now){
 }
 
 function fmtDate(s){const d=new Date(s+"T00:00:00");return WD[d.getDay()]+", "+d.getDate()+" "+MONTHS[d.getMonth()];}
+function localDateStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function timeIn(utc,tz){
   try{return new Intl.DateTimeFormat("ru-RU",{hour:"2-digit",minute:"2-digit",timeZone:tz}).format(new Date(utc));}
   catch(e){return new Intl.DateTimeFormat("ru-RU",{hour:"2-digit",minute:"2-digit"}).format(new Date(utc));}
@@ -240,6 +250,7 @@ function matchCard(m,now){
 
 function renderSched(){
   const now=Date.now();
+  const todayStr=localDateStr(new Date());
   const fs=document.getElementById("fStage").value;
   const fc=document.getElementById("fCity").value;
   const fst=document.getElementById("fStatus").value;
@@ -249,18 +260,31 @@ function renderSched(){
     if(fst!=="all"&&matchState(m,now)!==fst) return false;
     return true;
   });
-  document.getElementById("count").textContent=list.length+" матч(ей)";
+  const past=list.filter(function(m){return m.date<todayStr;});
+  const current=list.filter(function(m){return m.date>=todayStr;});
+  const data=showPast?past:current;
+  document.getElementById("count").textContent=data.length+" матч(ей)";
   const box=document.getElementById("view-sched");
-  if(!list.length){box.innerHTML='<div class="empty">Нет матчей по выбранным фильтрам.</div>';return;}
-  const byDate={};
-  list.forEach(function(m){(byDate[m.date]=byDate[m.date]||[]).push(m);});
-  let html="";
-  Object.keys(byDate).sort().forEach(function(d){
-    html+='<div class="day"><div class="dayhead">'+fmtDate(d)+'</div><div class="grid">';
-    byDate[d].forEach(function(m){html+=matchCard(m,now);});
-    html+='</div></div>';
-  });
+  let html='<div class="pastbar">';
+  if(showPast) html+='<button class="pastbtn on" id="pastToggle">← Назад к текущим</button>';
+  else html+='<button class="pastbtn" id="pastToggle">📁 Прошедшие игры ('+past.length+')</button>';
+  html+='</div>';
+  const dates=Object.keys(data.reduce(function(a,m){a[m.date]=1;return a;},{}));
+  dates.sort();
+  if(showPast) dates.reverse();
+  if(!data.length){
+    html+='<div class="empty">'+(showPast?'Прошедших матчей нет.':'На сегодня и далее матчей по фильтрам нет.')+'</div>';
+  }else{
+    dates.forEach(function(d){
+      const isToday=(d===todayStr);
+      html+='<div class="day"><div class="dayhead'+(isToday?' today':'')+'">'+fmtDate(d)+(isToday?' · сегодня':'')+'</div><div class="grid">';
+      data.filter(function(m){return m.date===d;}).forEach(function(m){html+=matchCard(m,now);});
+      html+='</div></div>';
+    });
+  }
   box.innerHTML=html;
+  var pt=document.getElementById("pastToggle");
+  if(pt) pt.addEventListener("click",function(){showPast=!showPast;renderSched();});
 }
 
 function computeStandings(){
@@ -350,7 +374,6 @@ WC_DATA.cities.forEach(function(c){const o=document.createElement("option");o.va
 
 tick();setInterval(tick,1000);
 
-// ===== ЖИВЫЕ ДАННЫЕ через серверную функцию /api/matches =====
 async function fetchMatches(){
   try{
     const res=await fetch("/api/matches");
@@ -385,7 +408,6 @@ function scheduleRefresh(){
   document.getElementById("clkd").textContent=anyLive?"🔴 идут матчи · обновление 30с":"обновление 60с";
   setTimeout(function(){ fetchMatches().then(function(){ refresh(); scheduleRefresh(); }); }, anyLive?30000:60000);
 }
-// первый запрос при загрузке, затем автообновление
 fetchMatches().then(function(){ refresh(); scheduleRefresh(); });
 refresh();
 </script>
