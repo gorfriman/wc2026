@@ -561,6 +561,7 @@ async function fetchMatches(){
     data.matches.forEach(function(am){
       const h=normEn(am.homeTeam&&am.homeTeam.name), a=normEn(am.awayTeam&&am.awayTeam.name);
       const m=idx[h+"|"+a]; if(!m) return;
+      if(am.utcDate) m.utc=am.utcDate; // реальное время начала из API
       const ft=(am.score&&am.score.fullTime)||{};
       if(am.status==="FINISHED"){ if(ft.home!=null){m.sh=ft.home;m.sa=ft.away;} }
       else if(am.status==="IN_PLAY"||am.status==="PAUSED"){
@@ -570,7 +571,7 @@ async function fetchMatches(){
       }
     });
     API_OK=true;
-    document.getElementById("note").innerHTML="🔴 Живой режим · данные football-data.org обновляются автоматически";
+    document.getElementById("note").innerHTML="🔴 Живой режим · счёт и время матчей — из football-data.org";
   }catch(e){
     API_OK=false;
     document.getElementById("note").innerHTML="⚠️ API недоступен — показано зашитое расписание. Проверь FOOTBALL_API_KEY в настройках Vercel.";
